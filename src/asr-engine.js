@@ -175,9 +175,10 @@ export class AsrEngine {
     this._profile = name;
     this._encName = p.encoder;
     this._encDataName = p.encoderData;
-    this._newFrames = 56;
+    this._newFrames = p.newFrames;
     this._cacheFrames = 9;
-    this._encIn = 65;
+    this._encIn = 9 + p.newFrames;
+    this._encTensorShape = [1, this._encIn, C.N_MELS];
   }
 
   get ready() { return this._ready; }
@@ -192,7 +193,15 @@ export class AsrEngine {
 
   async switchProfile(name) {
     this._applyProfile(name);
-    // All profiles share the same encoder (560ms), no reload needed.
+    if (!this._ready) return;
+    if (this._enc) {
+      await this._releaseSession(this._enc);
+      this._enc = null;
+    }
+    this._enc = await this._createSession(
+      this._encName, this._encDataName, [{ name: this._encEP }],
+      `encoder (~690 MB, ${this._encEP})`,
+    );
   }
 
   // ── lifecycle ──
@@ -366,7 +375,7 @@ export class AsrEngine {
       results.push({
         profile: name,
         rightContext: 6,
-        latencyLabel: "560ms",
+        latencyLabel: `${p.latencyMs}ms`,
         processingTimeMs: procMs,
         audioDurationSec: audioSec,
         rtf,

@@ -1,9 +1,9 @@
 export const Profiles = {
-  TURBO:    { encoder: "encoder_80ms.onnx",   encoderData: "encoder_80ms.onnx.data"   },
-  FAST:     { encoder: "encoder_160ms.onnx",  encoderData: "encoder_160ms.onnx.data"  },
-  BALANCED: { encoder: "encoder_320ms.onnx",  encoderData: "encoder_320ms.onnx.data"  },
-  NORMAL:   { encoder: "encoder_560ms.onnx",  encoderData: "encoder_560ms.onnx.data"  },
-  HIGH:     { encoder: "encoder_1120ms.onnx", encoderData: "encoder_1120ms.onnx.data" },
+  TURBO:    { encoder: "encoder_80ms.onnx",   encoderData: "encoder_80ms.onnx.data",   latencyMs: 80,  newFrames: 8  },
+  FAST:     { encoder: "encoder_160ms.onnx",  encoderData: "encoder_160ms.onnx.data",  latencyMs: 160, newFrames: 16 },
+  BALANCED: { encoder: "encoder_320ms.onnx",  encoderData: "encoder_320ms.onnx.data",  latencyMs: 320, newFrames: 32 },
+  NORMAL:   { encoder: "encoder_560ms.onnx",  encoderData: "encoder_560ms.onnx.data",  latencyMs: 560, newFrames: 56 },
+  HIGH:     { encoder: "encoder_1120ms.onnx", encoderData: "encoder_1120ms.onnx.data", latencyMs: 1120, newFrames: 112 },
 };
 
 export const CONFIG = {
