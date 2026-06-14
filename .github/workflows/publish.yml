@@ -1,15 +1,22 @@
 name: Publish to npm
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       id-token: write
     steps:
       - uses: actions/checkout@v4
@@ -17,4 +24,9 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+      - run: |
+          git config user.name jeffpeng3
+          git config user.email jeffpeng2012@gmail.com
+          npm version ${{ github.event.inputs.bump }}
+          git push
       - run: npm publish --provenance --access public
