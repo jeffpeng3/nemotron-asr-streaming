@@ -2,23 +2,25 @@
 
 [![npm version](https://img.shields.io/npm/v/@jeffpeng3/nemotron-asr-core.svg)](https://www.npmjs.com/package/@jeffpeng3/nemotron-asr-core)
 
-In-browser speech recognition using NVIDIA's Nemotron 3.5 (FastConformer-RNNT)
-via `onnxruntime-web` on WebGPU. Fully client-side — no server needed.
+Streaming in-browser speech recognition using NVIDIA Nemotron 3.5
+(FastConformer-RNNT) via `onnxruntime-web` on WebGPU. Fully client-side
+— no server needed. Supports live mic capture, file transcription, and
+5 latency-accuracy profiles.
 
 ```
-npm install nemotron-asr-core
+npm install @jeffpeng3/nemotron-asr-core
 ```
 
 ## Live Demo
 
-A static demo app is included in the repo under `example/`. To run it:
+A demo app is included under `example/`. Run it with Vite:
 
 ```bash
-python3 -m http.server 8000
-# open http://localhost:8000/example/
+npm install
+npm run dev
 ```
 
-`file://` won't work — the demo uses module workers and mic access.
+Then open the URL shown in the terminal (usually `http://localhost:5173`).
 
 ## Features
 
@@ -31,7 +33,7 @@ python3 -m http.server 8000
 ## Usage
 
 ```js
-import { AsrEngine } from "nemotron-asr-core";
+import { AsrEngine } from "@jeffpeng3/nemotron-asr-core";
 
 // Callbacks for UI updates
 const engine = new AsrEngine({
