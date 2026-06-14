@@ -1,4 +1,4 @@
-import { CONFIG } from "../../src/index.js";
+import { CONFIG } from "@jeffpeng3/nemotron-asr-core";
 
 const SR = CONFIG.SR;
 const $ = (id) => document.getElementById(id);

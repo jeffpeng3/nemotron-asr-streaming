@@ -1,4 +1,4 @@
-import { AsrEngine } from "../../src/index.js";
+import { AsrEngine } from "@jeffpeng3/nemotron-asr-core";
 
 const post = (m, t) => self.postMessage(m, t || []);
 

@@ -5,6 +5,16 @@
   "main": "./src/index.js",
   "types": "./types.d.ts",
   "sideEffects": false,
+  "dependencies": {
+    "onnxruntime-web": "1.26.0"
+  },
+  "devDependencies": {
+    "vite": "^8.0.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
   "exports": {
     ".": {
       "types": "./types.d.ts",
