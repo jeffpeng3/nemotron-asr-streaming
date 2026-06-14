@@ -1,4 +1,4 @@
-import * as ort from "onnxruntime-web";
+import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0/dist/ort.webgpu.mjs";
 import { CONFIG, Profiles } from "./config.js";
 import {
   buildMelFB,
