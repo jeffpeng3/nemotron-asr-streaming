@@ -142,6 +142,7 @@ export class AsrEngine {
     }
     if (!ort.env.wasm.wasmPaths) ort.env.wasm.wasmPaths = ORT_WASM_CDN;
     ort.env.logLevel = "error";
+    ort.env.webgpu.powerPreference = "high-performance";
 
     this._applyProfile(options.profile || "NORMAL");
     this._beamWidth = Math.max(1, options.beamWidth || 1);
