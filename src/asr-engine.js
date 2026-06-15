@@ -164,18 +164,8 @@ export class AsrEngine {
     this._jointEncTensor = null;
     this._jointDecTensor = null;
     this._encBuf = null;
-    this._encTensor = null;
     this._encFrameBuf = new Float32Array(C.D_MODEL);
-
-    // GPU upload buffers for encoder inputs
-    this._audioGpuBuf = null;
-    this._audioGpuTensor = null;
-    this._lengthGpuBuf = null;
-    this._lengthGpuTensor = null;
-    this._cacheLenGpuBuf = null;
-    this._cacheLenGpuTensor = null;
-    this._langGpuBuf = null;
-    this._langGpuTensor = null;
+    this._gpuEnc = null; // { audio: {buf,tensor}, length, cacheLen, lang }
   }
 
   _applyProfile(name) {
@@ -187,7 +177,6 @@ export class AsrEngine {
     this._newFrames = p.newFrames;
     this._cacheFrames = 9;
     this._encIn = 9 + p.newFrames;
-    this._encTensorShape = [1, this._encIn, C.N_MELS];
   }
 
   get ready() { return this._ready; }
@@ -288,7 +277,6 @@ export class AsrEngine {
       this._initEncoderGpuBuffers();
 
       this._ready = true;
-      this._encTensorShape = [1, this._encIn, C.N_MELS];
       this._jointEncBuf = new Float32Array(C.D_MODEL);
       this._jointDecBuf = new Float32Array(C.DEC_HID);
       this._jointEncTensor = new ort.Tensor("float32", this._jointEncBuf, [1, 1, C.D_MODEL]);
@@ -521,17 +509,12 @@ export class AsrEngine {
   }
 
   _releaseEncoderGpuBuffers() {
-    for (const b of [this._audioGpuBuf, this._lengthGpuBuf, this._cacheLenGpuBuf, this._langGpuBuf]) {
-      if (b) try { b.destroy(); } catch {}
+    if (!this._gpuEnc) return;
+    for (const key of ["audio", "length", "cacheLen", "lang"]) {
+      const entry = this._gpuEnc[key];
+      if (entry && entry.buf) try { entry.buf.destroy(); } catch {}
     }
-    this._audioGpuBuf = null;
-    this._audioGpuTensor = null;
-    this._lengthGpuBuf = null;
-    this._lengthGpuTensor = null;
-    this._cacheLenGpuBuf = null;
-    this._cacheLenGpuTensor = null;
-    this._langGpuBuf = null;
-    this._langGpuTensor = null;
+    this._gpuEnc = null;
   }
 
   _initEncoderGpuBuffers() {
@@ -541,32 +524,36 @@ export class AsrEngine {
     const T = this._encIn;
 
     const audioSize = T * C.N_MELS * 4;
-    this._audioGpuBuf = d.createBuffer({
+    const audioBuf = d.createBuffer({
       size: Math.ceil(audioSize / 16) * 16,
-      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC | GPUBufferUsage.STORAGE,
     });
-    this._audioGpuTensor = ort.Tensor.fromGpuBuffer(this._audioGpuBuf, {
+    const audioTensor = ort.Tensor.fromGpuBuffer(audioBuf, {
       dataType: "float32",
       dims: [1, T, C.N_MELS],
     });
 
-    for (const { bufField, tensorField, size } of [
-      { bufField: "_lengthGpuBuf", tensorField: "_lengthGpuTensor", size: 16 },
-      { bufField: "_cacheLenGpuBuf", tensorField: "_cacheLenGpuTensor", size: 16 },
-      { bufField: "_langGpuBuf", tensorField: "_langGpuTensor", size: 16 },
-    ]) {
-      this[bufField] = d.createBuffer({ size, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE });
-      this[tensorField] = ort.Tensor.fromGpuBuffer(this[bufField], { dataType: "int64", dims: [1] });
-    }
+    const mk = (size) => {
+      const buf = d.createBuffer({ size, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC | GPUBufferUsage.STORAGE });
+      return { buf, tensor: ort.Tensor.fromGpuBuffer(buf, { dataType: "int64", dims: [1] }) };
+    };
+
+    this._gpuEnc = {
+      audio: { buf: audioBuf, tensor: audioTensor },
+      length: mk(16),
+      cacheLen: mk(16),
+      lang: mk(16),
+    };
   }
 
   _uploadEncoderInputs(length, ccl, langId) {
+    const g = this._gpuEnc;
+    if (!g) return;
     const d = ort.env.webgpu.device;
-    if (!d || !this._audioGpuBuf) return;
-    d.queue.writeBuffer(this._audioGpuBuf, 0, this._getEncBuf());
-    d.queue.writeBuffer(this._lengthGpuBuf, 0, new BigInt64Array([BigInt(length)]));
-    d.queue.writeBuffer(this._cacheLenGpuBuf, 0, new BigInt64Array([BigInt(ccl)]));
-    d.queue.writeBuffer(this._langGpuBuf, 0, new BigInt64Array([BigInt(langId)]));
+    d.queue.writeBuffer(g.audio.buf, 0, this._getEncBuf());
+    d.queue.writeBuffer(g.length.buf, 0, new BigInt64Array([BigInt(length)]));
+    d.queue.writeBuffer(g.cacheLen.buf, 0, new BigInt64Array([BigInt(ccl)]));
+    d.queue.writeBuffer(g.lang.buf, 0, new BigInt64Array([BigInt(langId)]));
   }
 
   // ── internal: tensor helpers ──
@@ -602,15 +589,8 @@ export class AsrEngine {
     const sz = this._encIn * C.N_MELS;
     if (!this._encBuf || this._encBuf.length !== sz) {
       this._encBuf = new Float32Array(sz);
-      this._encTensor = null;
     }
     return this._encBuf;
-  }
-
-  _getEncTensor() {
-    if (!this._encTensor)
-      this._encTensor = new ort.Tensor("float32", this._getEncBuf(), this._encTensorShape);
-    return this._encTensor;
   }
 
   // ── internal: RNN-T decode ──
@@ -865,13 +845,14 @@ export class AsrEngine {
     const __t = performance.now();
     const t0 = performance.now();
     this._uploadEncoderInputs(length, s.ccl, s.langId);
+    const g = this._gpuEnc;
     const er = await this._enc.run({
-      audio_signal: this._audioGpuTensor || this._getEncTensor(),
-      length: this._lengthGpuTensor || this._i64([length], [1]),
+      audio_signal: g.audio.tensor,
+      length: g.length.tensor,
       cache_last_channel: s.cchTensor || this._f32(s.cch, [1, C.LAYERS, 56, C.D_MODEL]),
       cache_last_time: s.cctTensor || this._f32(s.cct, [1, C.LAYERS, C.D_MODEL, 8]),
-      cache_last_channel_len: this._cacheLenGpuTensor || this._i64([s.ccl], [1]),
-      lang_id: this._langGpuTensor || this._i64([s.langId], [1]),
+      cache_last_channel_len: g.cacheLen.tensor,
+      lang_id: g.lang.tensor,
     });
     if (diag) diag.encoder += performance.now() - t0;
     this._perfEnd("encoderStep", __t);
