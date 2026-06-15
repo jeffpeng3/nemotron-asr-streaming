@@ -184,6 +184,19 @@ export class AsrEngine {
   get profile() { return this._profile; }
   get encoderEP() { return this._encEP; }
 
+  get _encoderOpts() {
+    return {
+      freeDimensionOverrides: { time: this._encIn },
+      preferredOutputLocation: {
+        outputs: "cpu",
+        cache_last_channel_next: "gpu-buffer",
+        cache_last_time_next: "gpu-buffer",
+        cache_last_channel_len_next: "cpu",
+        encoded_lengths: "cpu",
+      },
+    };
+  }
+
   async _releaseSession(s) {
     if (s && typeof s.release === "function") {
       try { await s.release(); } catch {}
@@ -193,6 +206,10 @@ export class AsrEngine {
   async switchProfile(name) {
     this._applyProfile(name);
     if (!this._ready) return;
+    await this._createEncoderSession();
+  }
+
+  async _createEncoderSession() {
     this._releaseEncoderGpuBuffers();
     if (this._enc) {
       await this._releaseSession(this._enc);
@@ -201,22 +218,12 @@ export class AsrEngine {
     this._enc = await this._createSession(
       this._encName, this._encDataName, [{ name: "webgpu" }],
       `encoder (~690 MB, webgpu)`,
-      {
-        freeDimensionOverrides: { time: this._encIn },
-        preferredOutputLocation: {
-          outputs: "cpu",
-          cache_last_channel_next: "gpu-buffer",
-          cache_last_time_next: "gpu-buffer",
-          cache_last_channel_len_next: "cpu",
-          encoded_lengths: "cpu",
-        },
-      },
+      this._encoderOpts,
     );
     this._initEncoderGpuBuffers();
 
-    // Warmup: compile WebGPU shaders for this profile's input size
     try {
-      this._emit("status", `warming up ${name} encoder ...`);
+      this._emit("status", `warming up ${this._profile} encoder ...`);
       const wu = await this._newState(101);
       await this._encoderStep(wu, this._encIn - 9, null);
       if (wu.cchTensor) wu.cchTensor.dispose();
@@ -260,22 +267,7 @@ export class AsrEngine {
       }
       this._encEP = "webgpu";
       this._emit("ep", true, this._encEP);
-      this._enc = await this._createSession(
-        this._encName, this._encDataName, [{ name: "webgpu" }],
-        `encoder (~690 MB, webgpu)`,
-        {
-          freeDimensionOverrides: { time: this._encIn },
-          preferredOutputLocation: {
-            outputs: "cpu",
-            cache_last_channel_next: "gpu-buffer",
-            cache_last_time_next: "gpu-buffer",
-            cache_last_channel_len_next: "cpu",
-            encoded_lengths: "cpu",
-          },
-        },
-      );
-
-      this._initEncoderGpuBuffers();
+      await this._createEncoderSession();
 
       this._ready = true;
       this._jointEncBuf = new Float32Array(C.D_MODEL);
@@ -614,7 +606,6 @@ export class AsrEngine {
   }
 
   async _decoderStep(s, token, diag) {
-    const __t = performance.now();
     const t0 = performance.now();
     const r = await this._dec.run({
       targets: this._i64([token], [1, 1]),
@@ -622,7 +613,7 @@ export class AsrEngine {
       c_in: this._f32(s.c, [C.DEC_LAYERS, 1, C.DEC_HID]),
     });
     if (diag) diag.decoder += performance.now() - t0;
-    this._perfEnd("decoderStep", __t);
+    this._perfEnd("decoderStep", t0);
     s.h = r.h_out.data;
     s.c = r.c_out.data;
     s.decOut = r.decoder_output.data;
@@ -647,7 +638,6 @@ export class AsrEngine {
   }
 
   async _jointArgmax(s, encFrame, diag) {
-    const __t = performance.now();
     const t0 = performance.now();
     const logits = await this._jointLogits(s, encFrame);
     if (diag) diag.joint += performance.now() - t0;
@@ -656,7 +646,7 @@ export class AsrEngine {
     for (let i = 1; i < C.VOCAB; i++) {
       if (logits[i] > bv) { bv = logits[i]; best = i; }
     }
-    this._perfEnd("jointArgmax", __t);
+    this._perfEnd("jointArgmax", t0);
     return best;
   }
 
@@ -843,7 +833,6 @@ export class AsrEngine {
   }
 
   async _encoderStep(s, length, diag) {
-    const __t = performance.now();
     const t0 = performance.now();
     this._uploadEncoderInputs(length, s.ccl, s.langId);
     const g = this._gpuEnc;
@@ -856,7 +845,7 @@ export class AsrEngine {
       lang_id: g.lang.tensor,
     });
     if (diag) diag.encoder += performance.now() - t0;
-    this._perfEnd("encoderStep", __t);
+    this._perfEnd("encoderStep", t0);
     const enc = er.outputs.data;
     const encT = er.outputs.dims[1];
     s.ccl = Number(er.cache_last_channel_len_next.data[0]);
