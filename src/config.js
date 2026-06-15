@@ -1,4 +1,6 @@
-// dynamo=True / opset=21 single encoder (1893 nodes, rc=13)
+// Single encoder (dynamo=True, opset=21, rc=13) for all profiles.
+// freeDimensionOverrides pins the dynamic "time" dim to each profile's ENC_IN,
+// letting ORT optimize the graph as if it were static shape.
 export const Profiles = {
   TURBO:    { encoder: "encoder.onnx", encoderData: "encoder.onnx.data", latencyMs: 80,  newFrames: 8  },
   FAST:     { encoder: "encoder.onnx", encoderData: "encoder.onnx.data", latencyMs: 160, newFrames: 16 },
@@ -8,7 +10,7 @@ export const Profiles = {
 };
 
 export const CONFIG = {
-  BASE: "https://huggingface.co/jeffpeng3/nemotron-3.5-asr-streaming-0.6b-onnx-int4-test/resolve/main/",
+  BASE: "https://huggingface.co/jeffpeng3/nemotron-3.5-asr-streaming-0.6b-onnx-int4-dynamic/resolve/main/",
   SR: 16000,
   N_FFT: 512,
   HOP: 160,

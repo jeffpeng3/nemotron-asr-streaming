@@ -201,6 +201,7 @@ export class AsrEngine {
     this._enc = await this._createSession(
       this._encName, this._encDataName, [{ name: this._encEP }],
       `encoder (~690 MB, ${this._encEP})`,
+      { freeDimensionOverrides: { time: this._encIn }, enableGraphCapture: true },
     );
   }
 
@@ -243,10 +244,12 @@ export class AsrEngine {
       }
       this._encEP = useGPU ? "webgpu" : "wasm";
       this._emit("ep", true, this._encEP);
+      const encoderOpts = { freeDimensionOverrides: { time: this._encIn }, enableGraphCapture: true };
       try {
         this._enc = await this._createSession(
           this._encName, this._encDataName, [{ name: this._encEP }],
           `encoder (~690 MB, ${this._encEP})`,
+          encoderOpts,
         );
       } catch (err) {
         if (this._encEP === "webgpu" && !isMobile) {
@@ -255,6 +258,7 @@ export class AsrEngine {
           this._enc = await this._createSession(
             this._encName, this._encDataName, ["wasm"],
             "encoder (~690 MB, wasm)",
+            encoderOpts,
           );
         } else {
           throw err;
@@ -477,10 +481,10 @@ export class AsrEngine {
     return buf;
   }
 
-  async _createSession(modelFile, dataFile, executionProviders, label) {
+  async _createSession(modelFile, dataFile, executionProviders, label, extraOpts = {}) {
     this._emit("status", `loading ${label}`);
     const modelBytes = await this._fetchBytes(modelFile, modelFile);
-    const opts = { executionProviders, graphOptimizationLevel: "all" };
+    const opts = { executionProviders, graphOptimizationLevel: "all", ...extraOpts };
     if (dataFile) {
       const dataBytes = await this._fetchBytes(dataFile, dataFile);
       opts.externalData = [{ path: dataFile, data: dataBytes }];
