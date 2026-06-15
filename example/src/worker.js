@@ -18,6 +18,9 @@ function makeEngine(profile, beamWidth) {
     ep(encoder, ep, note) {
       post({ type: "ep", encoder, ep, note });
     },
+    perf({ stats, profile }) {
+      post({ type: "perf", stats, profile });
+    },
   }, { profile: profile || "NORMAL", beamWidth: beamWidth || 1 });
 }
 
@@ -125,7 +128,6 @@ async function handle(m) {
       const samples = m.samples ? new Float32Array(m.samples) : null;
       const results = await engine.benchmark({ duration: m.duration ?? 10, samples });
       post({ type: "benchmark", results });
-      postPerf();
       break;
     }
     case "clearCache": {

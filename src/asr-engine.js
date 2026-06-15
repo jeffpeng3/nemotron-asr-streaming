@@ -274,6 +274,8 @@ export class AsrEngine {
       this._jointDecBuf = new Float32Array(C.DEC_HID);
       this._jointEncTensor = new ort.Tensor("float32", this._jointEncBuf, [1, 1, C.D_MODEL]);
       this._jointDecTensor = new ort.Tensor("float32", this._jointDecBuf, [1, 1, C.DEC_HID]);
+      this._singleTokenBuf = new BigInt64Array(1);
+      this._singleTokenTensor = new ort.Tensor("int64", this._singleTokenBuf, [1, 1]);
     })();
 
     try {
@@ -372,12 +374,14 @@ export class AsrEngine {
         await this.transcribe(audio.subarray(0, short), langId);
       }
 
+      this._perfStats = {};
       const t0 = performance.now();
       const r = await this.transcribe(audio, langId);
       const procMs = performance.now() - t0;
       const rtf = procMs / 1000 / audioSec;
 
       this._emit("status", `[bench] ${name}: ${rtf.toFixed(3)} RTF`);
+      this._emit("perf", { stats: this.getPerfStats(), profile: name });
 
       results.push({
         profile: name,
@@ -607,8 +611,13 @@ export class AsrEngine {
 
   async _decoderStep(s, token, diag) {
     const t0 = performance.now();
+    if (!this._singleTokenBuf) {
+      this._singleTokenBuf = new BigInt64Array(1);
+      this._singleTokenTensor = new ort.Tensor("int64", this._singleTokenBuf, [1, 1]);
+    }
+    this._singleTokenBuf[0] = BigInt(token);
     const r = await this._dec.run({
-      targets: this._i64([token], [1, 1]),
+      targets: this._singleTokenTensor,
       h_in: this._f32(s.h, [C.DEC_LAYERS, 1, C.DEC_HID]),
       c_in: this._f32(s.c, [C.DEC_LAYERS, 1, C.DEC_HID]),
     });
@@ -651,13 +660,34 @@ export class AsrEngine {
   }
 
   _topK(logits, k, blankId) {
-    const arr = [];
+    if (k === 1) {
+      let best = -Infinity, bestIdx = -1;
+      for (let i = 0; i < logits.length; i++) {
+        if (i === blankId) continue;
+        const v = logits[i];
+        if (v > best) { best = v; bestIdx = i; }
+      }
+      return [{ idx: bestIdx, logProb: best }];
+    }
+    const top = new Array(k);
+    for (let i = 0; i < k; i++) top[i] = { idx: -1, logProb: -Infinity };
     for (let i = 0; i < logits.length; i++) {
       if (i === blankId) continue;
-      arr.push({ idx: i, v: logits[i] });
+      const v = logits[i];
+      if (v > top[k - 1].logProb) {
+        let j = k - 2;
+        while (j >= 0 && v > top[j].logProb) {
+          top[j + 1] = top[j];
+          j--;
+        }
+        top[j + 1] = { idx: i, logProb: v };
+      }
     }
-    arr.sort((a, b) => b.v - a.v);
-    return arr.slice(0, k).map((x) => ({ idx: x.idx, logProb: x.v }));
+    const out = [];
+    for (let i = 0; i < k; i++) {
+      if (top[i].idx >= 0) out.push(top[i]);
+    }
+    return out;
   }
 
   async _greedyDecode(enc, encT, s, fbuf, diag) {
@@ -855,10 +885,6 @@ export class AsrEngine {
     if (s.cctTensor) s.cctTensor.dispose();
     s.cchTensor = er.cache_last_channel_next;
     s.cctTensor = er.cache_last_time_next;
-
-    // Keep CPU copies for session recreation (profile switch)
-    s.cch.set(await er.cache_last_channel_next.getData());
-    s.cct.set(await er.cache_last_time_next.getData());
 
     const fbuf = this._encFrameBuf;
     if (this._beamWidth <= 1) {

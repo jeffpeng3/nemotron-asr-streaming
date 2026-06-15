@@ -177,7 +177,8 @@ worker.onmessage = (e) => {
       break;
     case "perf":
       try {
-        log("perf stats:", "dim");
+        const header = m.profile ? `${m.profile} perf stats:` : "perf stats:";
+        log(header, "dim");
         const s = m.stats || {};
         for (const k of Object.keys(s)) {
           const v = s[k];
