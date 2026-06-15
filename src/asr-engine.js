@@ -132,7 +132,7 @@ export class Session {
 export class AsrEngine {
   /**
    * @param {import("../types.d.ts").AsrEngineCallbacks} [callbacks]
-   * @param {{ profile?: string, beamWidth?: number, ensureCPU?: boolean, vad?: boolean | import("../types.d.ts").VadOptions }} [options]
+   * @param {{ profile?: string, beamWidth?: number, vad?: boolean | import("../types.d.ts").VadOptions }} [options]
    */
   constructor(callbacks = {}, options = {}) {
     this._callbacks = callbacks;
@@ -145,7 +145,6 @@ export class AsrEngine {
 
     this._applyProfile(options.profile || "NORMAL");
     this._beamWidth = Math.max(1, options.beamWidth || 1);
-    this._ensureCPU = !!options.ensureCPU;
     this._vadOptions = options.vad || null;
     this._emit("status", `beam width: ${this._beamWidth}${this._beamWidth > 1 ? " (beam search)" : " (greedy)"}`);
 
@@ -167,6 +166,16 @@ export class AsrEngine {
     this._encBuf = null;
     this._encTensor = null;
     this._encFrameBuf = new Float32Array(C.D_MODEL);
+
+    // GPU upload buffers for encoder inputs
+    this._audioGpuBuf = null;
+    this._audioGpuTensor = null;
+    this._lengthGpuBuf = null;
+    this._lengthGpuTensor = null;
+    this._cacheLenGpuBuf = null;
+    this._cacheLenGpuTensor = null;
+    this._langGpuBuf = null;
+    this._langGpuTensor = null;
   }
 
   _applyProfile(name) {
@@ -194,13 +203,14 @@ export class AsrEngine {
   async switchProfile(name) {
     this._applyProfile(name);
     if (!this._ready) return;
+    this._releaseEncoderGpuBuffers();
     if (this._enc) {
       await this._releaseSession(this._enc);
       this._enc = null;
     }
     this._enc = await this._createSession(
-      this._encName, this._encDataName, [{ name: this._encEP }],
-      `encoder (~690 MB, ${this._encEP})`,
+      this._encName, this._encDataName, [{ name: "webgpu" }],
+      `encoder (~690 MB, webgpu)`,
       {
         freeDimensionOverrides: { time: this._encIn },
         preferredOutputLocation: {
@@ -212,6 +222,18 @@ export class AsrEngine {
         },
       },
     );
+    this._initEncoderGpuBuffers();
+
+    // Warmup: compile WebGPU shaders for this profile's input size
+    try {
+      this._emit("status", `warming up ${name} encoder ...`);
+      const wu = await this._newState(101);
+      await this._encoderStep(wu, this._encIn - 9, null);
+      if (wu.cchTensor) wu.cchTensor.dispose();
+      if (wu.cctTensor) wu.cctTensor.dispose();
+    } catch (e) {
+      this._emit("status", `warmup skipped: ${(e && e.message) || e}`);
+    }
   }
 
   // ── lifecycle ──
@@ -241,47 +263,29 @@ export class AsrEngine {
         "joint.onnx", "joint.onnx.data", ["wasm"], "joint (CPU)",
       );
 
-      const hasGPU = !!(typeof navigator !== "undefined" && navigator.gpu);
-      const useGPU = hasGPU && !this._ensureCPU;
-      const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(
-        (typeof navigator !== "undefined" && navigator.userAgent) || "",
-      );
-      if (!hasGPU && isMobile && !this._ensureCPU) {
+      if (typeof navigator === "undefined" || !navigator.gpu) {
         throw new Error(
-          "WebGPU is required on mobile for this 690 MB model, but navigator.gpu isn't available in this browser. Try the latest Chrome on Android, or Safari 18+ on iOS.",
+          "WebGPU is required for this 690 MB model, but navigator.gpu isn't available in this browser. Try Chrome, Edge, or Safari 18+.",
         );
       }
-      this._encEP = useGPU ? "webgpu" : "wasm";
+      this._encEP = "webgpu";
       this._emit("ep", true, this._encEP);
-      const encoderOpts = {
-        freeDimensionOverrides: { time: this._encIn },
-        preferredOutputLocation: {
-          outputs: "cpu",
-          cache_last_channel_next: "gpu-buffer",
-          cache_last_time_next: "gpu-buffer",
-          cache_last_channel_len_next: "cpu",
-          encoded_lengths: "cpu",
+      this._enc = await this._createSession(
+        this._encName, this._encDataName, [{ name: "webgpu" }],
+        `encoder (~690 MB, webgpu)`,
+        {
+          freeDimensionOverrides: { time: this._encIn },
+          preferredOutputLocation: {
+            outputs: "cpu",
+            cache_last_channel_next: "gpu-buffer",
+            cache_last_time_next: "gpu-buffer",
+            cache_last_channel_len_next: "cpu",
+            encoded_lengths: "cpu",
+          },
         },
-      };
-      try {
-        this._enc = await this._createSession(
-          this._encName, this._encDataName, [{ name: this._encEP }],
-          `encoder (~690 MB, ${this._encEP})`,
-          encoderOpts,
-        );
-      } catch (err) {
-        if (this._encEP === "webgpu" && !isMobile) {
-          this._encEP = "wasm";
-          this._emit("ep", true, "wasm", String((err && err.message) || err));
-          this._enc = await this._createSession(
-            this._encName, this._encDataName, ["wasm"],
-            "encoder (~690 MB, wasm)",
-            encoderOpts,
-          );
-        } else {
-          throw err;
-        }
-      }
+      );
+
+      this._initEncoderGpuBuffers();
 
       this._ready = true;
       this._encTensorShape = [1, this._encIn, C.N_MELS];
@@ -514,6 +518,55 @@ export class AsrEngine {
         `failed to create ${label} session (${executionProviders.map((e) => e.name || e).join(",")}): ${(err && err.message) || err}`,
       );
     }
+  }
+
+  _releaseEncoderGpuBuffers() {
+    for (const b of [this._audioGpuBuf, this._lengthGpuBuf, this._cacheLenGpuBuf, this._langGpuBuf]) {
+      if (b) try { b.destroy(); } catch {}
+    }
+    this._audioGpuBuf = null;
+    this._audioGpuTensor = null;
+    this._lengthGpuBuf = null;
+    this._lengthGpuTensor = null;
+    this._cacheLenGpuBuf = null;
+    this._cacheLenGpuTensor = null;
+    this._langGpuBuf = null;
+    this._langGpuTensor = null;
+  }
+
+  _initEncoderGpuBuffers() {
+    const d = ort.env.webgpu.device;
+    if (!d) return;
+    this._releaseEncoderGpuBuffers();
+    const T = this._encIn;
+
+    const audioSize = T * C.N_MELS * 4;
+    this._audioGpuBuf = d.createBuffer({
+      size: Math.ceil(audioSize / 16) * 16,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE,
+    });
+    this._audioGpuTensor = ort.Tensor.fromGpuBuffer(this._audioGpuBuf, {
+      dataType: "float32",
+      dims: [1, T, C.N_MELS],
+    });
+
+    for (const { bufField, tensorField, size } of [
+      { bufField: "_lengthGpuBuf", tensorField: "_lengthGpuTensor", size: 16 },
+      { bufField: "_cacheLenGpuBuf", tensorField: "_cacheLenGpuTensor", size: 16 },
+      { bufField: "_langGpuBuf", tensorField: "_langGpuTensor", size: 16 },
+    ]) {
+      this[bufField] = d.createBuffer({ size, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE });
+      this[tensorField] = ort.Tensor.fromGpuBuffer(this[bufField], { dataType: "int64", dims: [1] });
+    }
+  }
+
+  _uploadEncoderInputs(length, ccl, langId) {
+    const d = ort.env.webgpu.device;
+    if (!d || !this._audioGpuBuf) return;
+    d.queue.writeBuffer(this._audioGpuBuf, 0, this._getEncBuf());
+    d.queue.writeBuffer(this._lengthGpuBuf, 0, new BigInt64Array([BigInt(length)]));
+    d.queue.writeBuffer(this._cacheLenGpuBuf, 0, new BigInt64Array([BigInt(ccl)]));
+    d.queue.writeBuffer(this._langGpuBuf, 0, new BigInt64Array([BigInt(langId)]));
   }
 
   // ── internal: tensor helpers ──
@@ -811,13 +864,14 @@ export class AsrEngine {
   async _encoderStep(s, length, diag) {
     const __t = performance.now();
     const t0 = performance.now();
+    this._uploadEncoderInputs(length, s.ccl, s.langId);
     const er = await this._enc.run({
-      audio_signal: this._getEncTensor(),
-      length: this._i64([length], [1]),
+      audio_signal: this._audioGpuTensor || this._getEncTensor(),
+      length: this._lengthGpuTensor || this._i64([length], [1]),
       cache_last_channel: s.cchTensor || this._f32(s.cch, [1, C.LAYERS, 56, C.D_MODEL]),
       cache_last_time: s.cctTensor || this._f32(s.cct, [1, C.LAYERS, C.D_MODEL, 8]),
-      cache_last_channel_len: this._i64([s.ccl], [1]),
-      lang_id: this._i64([s.langId], [1]),
+      cache_last_channel_len: this._cacheLenGpuTensor || this._i64([s.ccl], [1]),
+      lang_id: this._langGpuTensor || this._i64([s.langId], [1]),
     });
     if (diag) diag.encoder += performance.now() - t0;
     this._perfEnd("encoderStep", __t);

@@ -4,7 +4,7 @@ const post = (m, t) => self.postMessage(m, t || []);
 
 let engine = null;
 
-function makeEngine(profile, beamWidth, ensureCPU) {
+function makeEngine(profile, beamWidth) {
   return new AsrEngine({
     progress(label, loaded, total, cached) {
       post({ type: "progress", label, loaded, total, cached: !!cached });
@@ -18,7 +18,7 @@ function makeEngine(profile, beamWidth, ensureCPU) {
     ep(encoder, ep, note) {
       post({ type: "ep", encoder, ep, note });
     },
-  }, { profile: profile || "NORMAL", beamWidth: beamWidth || 1, ensureCPU: !!ensureCPU });
+  }, { profile: profile || "NORMAL", beamWidth: beamWidth || 1 });
 }
 
 function postPerf() {
@@ -33,12 +33,10 @@ async function handle(m) {
     case "init": {
       const profile = m.profile || "NORMAL";
       const bw = m.beamWidth || 1;
-      const cpu = m.ensureCPU;
       if (!engine) {
-        engine = makeEngine(profile, bw, cpu);
+        engine = makeEngine(profile, bw);
       } else {
         engine._beamWidth = bw;
-        engine._ensureCPU = !!cpu;
         post({ type: "status", detail: `beam width: ${bw}${bw > 1 ? " (beam search)" : " (greedy)"}` });
         if (engine.profile !== profile) {
           await engine.switchProfile(profile);
@@ -118,7 +116,7 @@ async function handle(m) {
       break;
     }
     case "benchmark": {
-      if (!engine) engine = makeEngine("HIGH", m.beamWidth || 1, m.ensureCPU);
+      if (!engine) engine = makeEngine("HIGH", m.beamWidth || 1);
       if (m.beamWidth != null) {
         engine._beamWidth = m.beamWidth;
         post({ type: "status", detail: `beam width: ${m.beamWidth}${m.beamWidth > 1 ? " (beam search)" : " (greedy)"}` });

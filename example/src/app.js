@@ -17,7 +17,6 @@ const els = {
   langChip: $("langChip"),
   stripTag: $("stripTag"),
   vadToggle: $("vadToggle"),
-  ensureCPU: $("ensureCPU"),
   normalize: $("normalize"),
   beamWidth: $("beamWidth"),
   transcript: $("transcript"),
@@ -99,7 +98,7 @@ function ensureReady() {
     readyReject = rej;
   });
   setStatus("loading model…", "loading");
-  worker.postMessage({ type: "init", profile: els.profile.value, beamWidth: parseInt(els.beamWidth.value), ensureCPU: els.ensureCPU.checked });
+  worker.postMessage({ type: "init", profile: els.profile.value, beamWidth: parseInt(els.beamWidth.value) });
   return readyPromise;
 }
 
@@ -119,12 +118,7 @@ worker.onmessage = (e) => {
       log(`· ${m.detail}`, "dim");
       break;
     case "ep":
-      log(
-        `${m.encoder ? "encoder " : ""}execution provider: ${m.ep}${
-          m.ep === "wasm" ? " (slow — live may lag)" : ""
-        }`,
-        m.ep === "wasm" ? "err" : "ok",
-      );
+      log(`execution provider: ${m.ep}`, m.ep === "webgpu" ? "ok" : "err");
       if (m.note) log("webgpu fallback: " + m.note, "dim");
       break;
     case "ready":
@@ -343,7 +337,7 @@ els.benchBtn.addEventListener("click", async () => {
   }
   log(`benchmark started — running all 5 profiles on ${label}`, "dim");
   try {
-    const msg = { type: "benchmark", duration: 10, beamWidth: parseInt(els.beamWidth.value), ensureCPU: els.ensureCPU.checked };
+    const msg = { type: "benchmark", duration: 10, beamWidth: parseInt(els.beamWidth.value) };
     if (samplesBuf) msg.samples = samplesBuf;
     worker.postMessage(msg, samplesBuf ? [samplesBuf] : []);
   } catch (err) {
