@@ -1,13 +1,14 @@
+// dynamo=True / opset=21 single encoder (1893 nodes, rc=13)
 export const Profiles = {
-  TURBO:    { encoder: "encoder_80ms.onnx",   encoderData: "encoder_80ms.onnx.data",   latencyMs: 80,  newFrames: 8  },
-  FAST:     { encoder: "encoder_160ms.onnx",  encoderData: "encoder_160ms.onnx.data",  latencyMs: 160, newFrames: 16 },
-  BALANCED: { encoder: "encoder_320ms.onnx",  encoderData: "encoder_320ms.onnx.data",  latencyMs: 320, newFrames: 32 },
-  NORMAL:   { encoder: "encoder_560ms.onnx",  encoderData: "encoder_560ms.onnx.data",  latencyMs: 560, newFrames: 56 },
-  HIGH:     { encoder: "encoder_1120ms.onnx", encoderData: "encoder_1120ms.onnx.data", latencyMs: 1120, newFrames: 112 },
+  TURBO:    { encoder: "encoder.onnx", encoderData: "encoder.onnx.data", latencyMs: 80,  newFrames: 8  },
+  FAST:     { encoder: "encoder.onnx", encoderData: "encoder.onnx.data", latencyMs: 160, newFrames: 16 },
+  BALANCED: { encoder: "encoder.onnx", encoderData: "encoder.onnx.data", latencyMs: 320, newFrames: 32 },
+  NORMAL:   { encoder: "encoder.onnx", encoderData: "encoder.onnx.data", latencyMs: 560, newFrames: 56 },
+  HIGH:     { encoder: "encoder.onnx", encoderData: "encoder.onnx.data", latencyMs: 1120, newFrames: 112 },
 };
 
 export const CONFIG = {
-  BASE: "https://huggingface.co/jeffpeng3/nemotron-3.5-asr-streaming-0.6b-onnx-int4/resolve/main/",
+  BASE: "https://huggingface.co/jeffpeng3/nemotron-3.5-asr-streaming-0.6b-onnx-int4-test/resolve/main/",
   SR: 16000,
   N_FFT: 512,
   HOP: 160,

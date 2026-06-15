@@ -181,7 +181,7 @@ textarea,
 
 .response-area--tall {
   min-height: calc(1.6em * 6 + 24px);
-  max-height: calc(1.6em * 14 + 24px);
+  max-height: calc(1.6em * 60 + 24px);
 }
 
 .response-area::-webkit-scrollbar {
