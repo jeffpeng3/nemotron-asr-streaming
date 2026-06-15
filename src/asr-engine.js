@@ -201,7 +201,7 @@ export class AsrEngine {
     this._enc = await this._createSession(
       this._encName, this._encDataName, [{ name: this._encEP }],
       `encoder (~690 MB, ${this._encEP})`,
-      { freeDimensionOverrides: { time: this._encIn }, enableGraphCapture: true },
+      { freeDimensionOverrides: { time: this._encIn } },
     );
   }
 
@@ -244,7 +244,7 @@ export class AsrEngine {
       }
       this._encEP = useGPU ? "webgpu" : "wasm";
       this._emit("ep", true, this._encEP);
-      const encoderOpts = { freeDimensionOverrides: { time: this._encIn }, enableGraphCapture: true };
+      const encoderOpts = { freeDimensionOverrides: { time: this._encIn } };
       try {
         this._enc = await this._createSession(
           this._encName, this._encDataName, [{ name: this._encEP }],
