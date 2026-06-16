@@ -1,7 +1,22 @@
-import { CONFIG } from "@jeffpeng3/nemotron-asr-core";
+import { CONFIG, LANG_TO_ID, langId as langIdFromCode } from "@jeffpeng3/nemotron-asr-core";
 
 const SR = CONFIG.SR;
 const $ = (id) => document.getElementById(id);
+
+// Build language dropdown
+{
+  const sel = $("langId");
+  const seen = new Set();
+  for (const [code, [id, desc]] of Object.entries(LANG_TO_ID)) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const opt = document.createElement("option");
+    opt.value = code;
+    opt.textContent = desc;
+    if (code === "auto") opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
 
 const els = {
   warn: $("webgpuWarning"),
@@ -240,7 +255,7 @@ worker.onmessage = (e) => {
   }
 };
 
-const langId = () => parseInt(els.lang.value || "0", 10);
+const langId = () => langIdFromCode(els.lang.value) ?? 101;
 
 let busy = false;
 
