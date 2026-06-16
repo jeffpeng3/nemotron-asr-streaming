@@ -215,7 +215,7 @@ worker.onmessage = (e) => {
       lines.push(`Profile     Beam  RTF      Time     Text`);
       lines.push(sep);
       for (const r of results) {
-        const text = (r.text || "").slice(0, 38).replace(/\n/g, " ");
+        const text = (r.text || "").replace(/\n/g, " ");
         const bwLabel = r.beamWidth === 1 ? "greedy" : `beam=${r.beamWidth}`;
         lines.push(
           `${r.profile.padEnd(12)} ${bwLabel.padEnd(6)} ${r.rtf.toFixed(3).padStart(6)}  ${r.processingTimeMs.toFixed(0).padStart(6)}ms  ${text}`,
