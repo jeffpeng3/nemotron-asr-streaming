@@ -5,7 +5,7 @@
 Streaming in-browser speech recognition using NVIDIA Nemotron 3.5
 (FastConformer-RNNT) via `onnxruntime-web` on WebGPU. Fully client-side
 — no server needed. Supports live mic capture, file transcription, and
-5 latency-accuracy profiles.
+5 latency-accuracy profiles from a single INT4-quantized encoder.
 
 ```
 npm install @jeffpeng3/nemotron-asr-core
@@ -24,11 +24,16 @@ Then open the URL shown in the terminal (usually `http://localhost:5173`).
 
 ## Features
 
-- **5 latency profiles** — 80 ms to 1120 ms, trade latency for accuracy
+- **Single INT4 encoder** — all 5 profiles share one `encoder.onnx` (~462 KB
+  model + ~733 MB weights, asymmetric INT4 quantized)
+- **5 latency profiles** — 80 ms to 1120 ms via `freeDimensionOverrides`
 - **Streaming & full-audio** — mic capture or file transcription
-- **Beam search decoding** (configurable 1–5 beams)
+- **Greedy + beam search** (configurable 1–5 beams)
+- **blankPenalty=0.5 by default** — suppresses blank-dominated output for
+  both greedy and beam search
 - **Multilingual** — auto-detect or pick from 20+ language IDs
-- **WebGPU accelerated** — falls back to WASM (CPU) on demand
+- **WebGPU encoder** — decoder/joint on WASM (CPU); single-threaded by
+  default (`numThreads=1`, overridable)
 
 ## Usage
 
@@ -51,7 +56,7 @@ const engine = new AsrEngine({
   },
 });
 
-// Download model weights (~690 MB, cached on-device)
+// Download model weights (~863 MB total, cached on-device)
 await engine.init();
 
 // ── Full audio transcription ──
@@ -83,13 +88,16 @@ for (const r of results) {
 
 ## Latency Profiles
 
-| Profile   | Latency | Encoder |
-|-----------|---------|---------|
-| `TURBO`   | 80 ms   | encoder_80ms.onnx |
-| `FAST`    | 160 ms  | encoder_160ms.onnx |
-| `BALANCED`| 320 ms  | encoder_320ms.onnx |
-| `NORMAL`  | 560 ms  | encoder_560ms.onnx |
-| `HIGH`    | 1120 ms | encoder_1120ms.onnx |
+All profiles use the same `encoder.onnx` with a dynamic time dimension
+pinned at runtime via `freeDimensionOverrides`.
+
+| Profile   | Latency | Encoder Frames |
+|-----------|---------|----------------|
+| `TURBO`   | 80 ms   | 17             |
+| `FAST`    | 160 ms  | 25             |
+| `BALANCED`| 320 ms  | 33             |
+| `NORMAL`  | 560 ms  | 49             |
+| `HIGH`    | 1120 ms | 65             |
 
 Lower latency = fewer context frames = less accurate. Choose the profile
 that fits your use case.
@@ -108,7 +116,9 @@ await engine.switchProfile("HIGH");  // highest accuracy
 |--------|---------|-------------|
 | `profile` | `"NORMAL"` | Initial latency profile |
 | `beamWidth` | `1` | Beam search width (1 = greedy) |
-| `ensureCPU` | `false` | Force encoder to WASM (skip WebGPU) |
+| `blankPenalty` | `0.5` | Subtract from blank logit (both greedy & beam) |
+| `blankTop2Threshold` | `0.3` | Secondary blank suppression threshold |
+| `numThreads` | `1` | WASM threads for decoder/joint |
 
 **Callbacks:**
 
@@ -136,15 +146,16 @@ Test all profiles and return RTF (Real-Time Factor) measurements.
 
 ### `switchProfile(name)`
 
-Switch latency profile at runtime (reloads encoder).
+Switch latency profile at runtime (reloads encoder session).
 
 ### `clearCache()`
 
-Remove cached model weights.
+Remove cached model weights and reset all sessions. Next `init()`
+re-downloads from Hugging Face.
 
 ### `getPerfStats()` → `Record<string, {ms, calls, avg}>`
 
-Performance statistics.
+Per-operation performance statistics (encoderStep, decoderStep, jointArgmax).
 
 ## Language IDs
 
@@ -157,22 +168,25 @@ See `LANG_TO_ID` and `langId()` exports for the full list.
 app.js (main thread)  ←→  worker.js (Web Worker)  ←→  Hugging Face / Cache API
                             └── AsrEngine
                                   ├── Mel filterbank + FFT
-                                  ├── Encoder (WebGPU or WASM)
-                                  ├── Decoder + Joint (WASM)
-                                  └── RNN-T beam search
+                                  ├── Encoder (WebGPU — required)
+                                  ├── Decoder + Joint (WASM, single-thread)
+                                  └── RNN-T greedy / beam search
 ```
 
-- Model weights (~690 MB) are fetched once from Hugging Face and cached
-  via the Cache API (Service Worker).
+- Model weights (~863 MB) are fetched once from Hugging Face and cached
+  via the Cache API with a versioned cache name.
 - All inference runs off the main thread via a Web Worker.
-- The encoder runs on WebGPU when available; decoder + joint always run
-  on WASM (CPU) for compatibility.
+- **Encoder requires WebGPU** (D3D12 on Windows, Vulkan on Linux, Metal
+  on macOS). Decoder + joint run on WASM (CPU).
+- WASM multi-threading (`numThreads > 1`) requires cross-origin isolation
+  headers (`Cross-Origin-Opener-Policy` + `Cross-Origin-Embedder-Policy`).
+  Disabled by default — pass `{ numThreads: 11 }` to enable if your
+  deployment supports it.
 
 ## Requirements
 
-- **Browser**: Chrome 113+ / Edge 113+ (WebGPU), or any browser with
-  WebAssembly. Safari 18+ on iOS.
-- **HTTP origin**: `file://` won't work — module workers and mic access
-  require `http://` or `https://`.
-- **GPU**: ~690 MB of GPU-accessible memory. Integrated GPUs with
-  < 690 MB of VRAM will page weights over PCIe (slow).
+- **Browser**: Chrome 113+ / Edge 113+ with WebGPU. Safari 18+ on iOS.
+  Firefox Nightly with `dom.webgpu.enabled`.
+- **GPU**: ~750 MB of GPU-accessible memory. Integrated GPUs may page
+  weights over PCIe (slower).
+- **Network**: Model weights (~863 MB) downloaded once, cached locally.
