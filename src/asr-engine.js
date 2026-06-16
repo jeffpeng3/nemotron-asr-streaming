@@ -10,7 +10,8 @@ import {
 import { EnergyVAD } from "./vad.js";
 
 const C = CONFIG;
-const CACHE_NAME = "nemotron-asr-int4-v1";
+const CACHE_PREFIX = "nemotron-asr-int4";
+const CACHE_VERSION = "1";  // bump when model changes to force re-download
 const ORT_WASM_CDN = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0/dist/";
 
 // ────────────────────────────────────────────
@@ -291,11 +292,30 @@ export class AsrEngine {
 
   async clearCache() {
     try {
-      await caches.delete(CACHE_NAME);
-      this._emit("status", "cached model cleared");
+      // Delete ALL caches matching our prefix (including past versions)
+      const names = await caches.keys();
+      let n = 0;
+      for (const name of names) {
+        if (name.startsWith(CACHE_PREFIX)) {
+          await caches.delete(name);
+          n++;
+        }
+      }
+      this._emit("status", `deleted ${n} cache(s) with prefix "${CACHE_PREFIX}"`);
     } catch (e) {
-      this._emit("status", `clear cache failed: ${(e && e.name) || e}`);
+      this._emit("status", `clear cache failed: ${(e && e.message) || e}`);
     }
+    // Release all sessions so next init() re-downloads from network
+    await this._releaseSession(this._dec);
+    this._dec = null;
+    await this._releaseSession(this._joint);
+    this._joint = null;
+    await this._releaseSession(this._enc);
+    this._enc = null;
+    this._releaseEncoderGpuBuffers();
+    this._ready = false;
+    this._initInFlight = null;
+    this._emit("status", "engine reset — call init() to re-download");
   }
 
   getPerfStats() {
@@ -451,7 +471,7 @@ export class AsrEngine {
   }
 
   async _openCache() {
-    try { return await caches.open(CACHE_NAME); } catch { return null; }
+    try { return await caches.open(CACHE_PREFIX + "-" + CACHE_VERSION); } catch { return null; }
   }
 
   async _fetchBytes(name, label) {
@@ -470,7 +490,7 @@ export class AsrEngine {
       this._emit("status", `[cache] caches API unavailable`);
     }
 
-    const resp = await fetch(url);
+    const resp = await fetch(url, { cache: "no-store" });
     if (!resp.ok || !resp.body)
       throw new Error(`HTTP ${resp.status || "?"} fetching ${label}`);
     const total = Number(resp.headers.get("content-length")) || 0;

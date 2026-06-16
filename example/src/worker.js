@@ -134,7 +134,8 @@ async function handle(m) {
       break;
     }
     case "clearCache": {
-      if (engine) await engine.clearCache();
+      if (!engine) engine = makeEngine("NORMAL", 1);
+      await engine.clearCache();
       break;
     }
   }
