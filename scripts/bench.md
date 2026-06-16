@@ -65,7 +65,40 @@ Notes:
 | right_context / left_context | 13 / 56 (single encoder, all 5 profiles) |
 | Export | `torch.onnx.export(dynamo=True)` |
 | Quantization | `MatMulNBitsQuantizer` (bits=4, accuracy_level=4) |
-| Runtime | `freeDimensionOverrides` + GPU IO binding + per-profile warmup |
+| Runtime | `freeDimensionOverrides` + GPU IO binding + per-profile warmup + blankPenalty |
+
+## Beam search blankPenalty
+
+`blankPenalty` subtracts a constant from the blank logit during beam search to suppress
+blank-dominant path degeneration in short-context profiles.
+
+### blankPenalty=0.3
+
+Audio: 44.0 s Japanese, RTX 3060.
+
+| Profile  | Beam   | RTF   | Time   | Transcript |
+|----------|--------|-------|--------|------------|
+| HIGH     | greedy | 0.096 | 4205ms | チャンネル登録者数が九万人を突破いたしました。 あと零点四万人四千人増えれ |
+| HIGH     | beam=2 | 0.119 | 5219ms | チャンネル登録者数がえっと九万人を突破いたしました。 あと零点四万人四千人 |
+| HIGH     | beam=3 | 0.148 | 6516ms | チャンネル登録者数がえっと九万人を突破いたしました。 あと零点四万人四千人 |
+| NORMAL   | greedy | 0.157 | 6900ms | チャンネル登録者数が九万人を突破いたしました。 後零増えればこの八点の待て |
+| NORMAL   | beam=2 | 0.176 | 7766ms | チャンネル登録者数がえっと九万人を突破いたしました。 あと零点四万人四千人 |
+| NORMAL   | beam=3 | 0.205 | 9040ms | チャンネル登録者数がえっと九万人を突破いたしました。 あと零点四万人四千人 |
+| BALANCED | greedy | 0.245 | 10796ms | チャンネル登録者数が九万人を突破いたしました。 あと零点四万人四千人増えれ |
+| BALANCED | beam=2 | 0.266 | 11697ms | チンネル登録者数がえっと九万人を突破いたしました。 あと零点四万人四千人増 |
+| BALANCED | beam=3 | 0.287 | 12629ms | チンネル登録者数がえっと九万人を突破いたしました。 あと零点四万人四千人増 |
+| FAST     | greedy | 0.474 | 20849ms | チャンネル登録者数が九万人を突破いたしました。 あと四万人四千人増えればこ |
+| FAST     | beam=2 | 0.487 | 21458ms | チンネル登録者数が九万人を突破いたしました。 あと四万人四千人増えればこの |
+| FAST     | beam=3 | 0.499 | 21968ms | チンネル登録者数が九万人を突破いたしました。 あと四万人四千人増えればこの |
+| TURBO    | greedy | 0.895 | 39392ms | チャンネル登録者数が九万人を突破いたしました。 あと零点四万人四千人増えれ |
+| TURBO    | beam=2 | 0.915 | 40302ms | チンネル登録者数がえっと九万人を突破いたしました。 あと零点四万人四千人増 |
+| TURBO    | beam=3 | 0.984 | 43324ms | チンネル登録者数がえっと九万人を突破いたしました。 あと零点四万人四千人増 |
+
+Key improvements vs baseline (blankPenalty=0):
+- NORMAL beam=2/3: "あと零点四万人四千人" phrase **recovered** — was entirely dropped at penalty=0
+- "えっと" correctly retained as filled pause rather than suppressed
+- BALANCED+/FAST/TURBO beam>1 still show "チンネル" onset error — short context remains a challenge
+- RTF impact: negligible (< 3% increase at same beam width)
 
 
 

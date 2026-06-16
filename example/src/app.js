@@ -336,7 +336,7 @@ els.benchBtn.addEventListener("click", async () => {
   }
   log(`benchmark started — running all 5 profiles on ${label}`, "dim");
   try {
-    const msg = { type: "benchmark", duration: 10, beamWidths: [1, 2, 3], blankPenalty: 0.3 };
+    const msg = { type: "benchmark", duration: 10, beamWidths: [1, 2, 3], blankPenalty: 0.5 };
     if (samplesBuf) msg.samples = samplesBuf;
     worker.postMessage(msg, samplesBuf ? [samplesBuf] : []);
   } catch (err) {

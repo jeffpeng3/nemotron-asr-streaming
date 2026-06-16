@@ -146,7 +146,8 @@ export class AsrEngine {
 
     this._applyProfile(options.profile || "NORMAL");
     this._beamWidth = Math.max(1, options.beamWidth || 1);
-    this._blankPenalty = options.blankPenalty ?? 0;
+    this._blankPenalty = options.blankPenalty ?? 0.5;
+    this._blankTop2Threshold = options.blankTop2Threshold ?? 0.3;
     this._vadOptions = options.vad || null;
     this._emit("status", `beam width: ${this._beamWidth}${this._beamWidth > 1 ? " (beam search)" : " (greedy)"}`);
 
@@ -664,10 +665,20 @@ export class AsrEngine {
     const t0 = performance.now();
     const logits = await this._jointLogits(s, encFrame);
     if (diag) diag.joint += performance.now() - t0;
-    let best = 0;
-    let bv = logits[0];
+    if (this._blankPenalty > 0) logits[C.BLANK] -= this._blankPenalty;
+    let best = 0, bv = logits[0];
+    let second = -1, sv = -Infinity;
     for (let i = 1; i < C.VOCAB; i++) {
-      if (logits[i] > bv) { bv = logits[i]; best = i; }
+      const v = logits[i];
+      if (v > bv) {
+        second = best; sv = bv;
+        best = i; bv = v;
+      } else if (v > sv) {
+        second = i; sv = v;
+      }
+    }
+    if (best === C.BLANK && second >= 0 && this._blankTop2Threshold > 0) {
+      if (bv - sv < this._blankTop2Threshold) best = second;
     }
     this._perfEnd("jointArgmax", t0);
     return best;
