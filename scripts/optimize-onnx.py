@@ -33,22 +33,23 @@ def apply_onnxsim(model):
 
 def apply_ort_optimizer(model):
     from onnxruntime.transformers import optimizer as ort_opt
+    from onnxruntime.transformers.fusion_options import FusionOptions
     print("  Running ORT transformer optimizer ...")
     t0 = time.time()
+    opt_options = FusionOptions("bert")
+    opt_options.enable_layer_norm_fusion = True
+    opt_options.enable_gelu_fusion = False
+    opt_options.enable_attention_fusion = False
+    opt_options.enable_skip_layer_norm_fusion = False
+    opt_options.enable_bias_skip_layer_norm_fusion = False
+    opt_options.enable_embed_layer_norm = False
+    opt_options.enable_qdq = False
     opt = ort_opt.optimize_model(
         model,
         model_type="bert",
         num_heads=0,
         hidden_size=0,
-        optimization_options=ort_opt.OptimizationOptions(
-            enable_layer_norm_fusion=True,
-            enable_gelu_fusion=False,
-            enable_attention_fusion=False,
-            enable_skip_layer_norm_fusion=False,
-            enable_bias_skip_layer_norm_fusion=False,
-            enable_embed_layer_norm=False,
-            enable_qdq=False,
-        ),
+        optimization_options=opt_options,
         use_gpu=False,
     )
     opt_model = opt.model
