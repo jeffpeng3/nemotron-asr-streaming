@@ -189,6 +189,7 @@ export class AsrEngine {
   get _encoderOpts() {
     return {
       freeDimensionOverrides: { time: this._encIn },
+      // enableGraphCapture: true,  // blocked by Reshape(177)/Shape(1) — no WebGPU kernel
       preferredOutputLocation: {
         outputs: "cpu",
         cache_last_channel_next: "gpu-buffer",
