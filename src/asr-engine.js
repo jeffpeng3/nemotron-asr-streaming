@@ -133,13 +133,13 @@ export class Session {
 export class AsrEngine {
   /**
    * @param {import("../types.d.ts").AsrEngineCallbacks} [callbacks]
-   * @param {{ profile?: string, beamWidth?: number, vad?: boolean | import("../types.d.ts").VadOptions }} [options]
+   * @param {{ profile?: string, beamWidth?: number, numThreads?: number, vad?: boolean | import("../types.d.ts").VadOptions }} [options]
    */
   constructor(callbacks = {}, options = {}) {
     this._callbacks = callbacks;
 
     if (typeof navigator !== "undefined") {
-      ort.env.wasm.numThreads = Math.max(1, (navigator.hardwareConcurrency || 2) - 1);
+      ort.env.wasm.numThreads = Math.max(1, options.numThreads ?? 1);
     }
     if (!ort.env.wasm.wasmPaths) ort.env.wasm.wasmPaths = ORT_WASM_CDN;
     ort.env.logLevel = "error";

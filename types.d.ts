@@ -136,6 +136,7 @@ export interface BenchmarkOptions {
 export interface AsrEngineOptions {
   profile?: "TURBO" | "FAST" | "BALANCED" | "NORMAL" | "HIGH";
   beamWidth?: number;
+  numThreads?: number;
   vad?: boolean | VadOptions;
 }
 
