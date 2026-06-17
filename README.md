@@ -119,6 +119,7 @@ await engine.switchProfile("HIGH");  // highest accuracy
 | `blankPenalty` | `0.5` | Subtract from blank logit (both greedy & beam) |
 | `blankTop2Threshold` | `0.3` | Secondary blank suppression threshold |
 | `numThreads` | `1` | WASM threads for decoder/joint |
+| `wasmPaths` | CDN | Custom path for onnxruntime-web WASM files. Set to a local directory when bundling in a Chrome extension or offline environment to avoid CSP issues. |
 
 **Callbacks:**
 

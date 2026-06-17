@@ -141,7 +141,11 @@ export class AsrEngine {
     if (typeof navigator !== "undefined") {
       ort.env.wasm.numThreads = Math.max(1, options.numThreads ?? 1);
     }
-    if (!ort.env.wasm.wasmPaths) ort.env.wasm.wasmPaths = ORT_WASM_CDN;
+    if (options.wasmPaths) {
+      ort.env.wasm.wasmPaths = options.wasmPaths;
+    } else if (!ort.env.wasm.wasmPaths) {
+      ort.env.wasm.wasmPaths = ORT_WASM_CDN;
+    }
     ort.env.logLevel = "error";
     ort.env.webgpu.powerPreference = "high-performance";
 

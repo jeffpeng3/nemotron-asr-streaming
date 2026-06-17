@@ -138,6 +138,7 @@ export interface AsrEngineOptions {
   beamWidth?: number;
   numThreads?: number;
   vad?: boolean | VadOptions;
+  wasmPaths?: string;
 }
 
 export declare class AsrEngine {
