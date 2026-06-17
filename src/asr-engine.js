@@ -35,6 +35,7 @@ export class Session {
     this._diag = null;
     this._started = false;
     this._ended = false;
+    this._lastEmittedLen = 0;
     this._vad = null;
     if (vadOptions) {
       this._vad = new EnergyVAD({
@@ -51,10 +52,10 @@ export class Session {
 
   /**
    * Push audio samples for streaming inference.
-   * Returns partial result when enough frames accumulate, or null otherwise.
+   * Returns delta results per block when enough frames accumulate, or null otherwise.
    * When VAD is enabled, non-speech audio is silently skipped.
    * @param {Float32Array} samples - 16 kHz PCM audio.
-   * @returns {Promise<{text:string, lang:string|null}|null>}
+   * @returns {Promise<Array<{text:string, lang:string|null}>|null>}
    */
   async feed(samples) {
     if (this._ended) throw new Error("session has ended");
@@ -75,13 +76,17 @@ export class Session {
     const newFrames = this._mel.push(samples);
     for (const fr of newFrames) this._frames.push(fr);
 
-    let partial = null;
+    const partials = [];
     while (this._frames.length + this._frameOffset - this._consumed >= eng._newFrames) {
       await this._runBlock(eng._newFrames);
-      const { text, lang } = detok(this._state.emitted, eng._vocab);
-      partial = { text, lang };
+      const newIds = this._state.emitted.slice(this._lastEmittedLen);
+      this._lastEmittedLen = this._state.emitted.length;
+      if (newIds.length > 0) {
+        const { text, lang } = detok(newIds, eng._vocab);
+        partials.push({ text, lang });
+      }
     }
-    return partial;
+    return partials.length > 0 ? partials : null;
   }
 
   /**
@@ -91,7 +96,7 @@ export class Session {
   async end() {
     if (this._ended) return null;
     this._ended = true;
-    if (!this._started) return { text: "", lang: null, tokens: 0, timing: null };
+    if (!this._started) return { text: "", lang: null, deltaText: "", deltaLang: null, tokens: 0, timing: null };
     const eng = this._engine;
 
     const remaining = this._frames.length + this._frameOffset - this._consumed;
@@ -99,6 +104,8 @@ export class Session {
       await this._runBlock(Math.min(eng._newFrames, remaining));
     }
     const { text, lang } = detok(this._state.emitted, eng._vocab);
+    const newIds = this._state.emitted.slice(this._lastEmittedLen);
+    const delta = newIds.length > 0 ? detok(newIds, eng._vocab) : { text: "", lang: null };
     const total = performance.now() - this._diag.start;
     const timing = {
       encoder: this._diag.encoder,
@@ -106,7 +113,7 @@ export class Session {
       decoder: this._diag.decoder,
       total,
     };
-    return { text, lang, tokens: this._state.emitted.length, timing };
+    return { text, lang, deltaText: delta.text, deltaLang: delta.lang, tokens: this._state.emitted.length, timing };
   }
 
   async _runBlock(validNew) {

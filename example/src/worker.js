@@ -96,9 +96,11 @@ async function handle(m) {
     }
     case "streamAudio": {
       if (!sess) break;
-      const result = await sess.feed(new Float32Array(m.samples));
-      if (result) {
-        post({ type: "partial", text: result.text, lang: result.lang });
+      const results = await sess.feed(new Float32Array(m.samples));
+      if (results) {
+        for (const { text, lang } of results) {
+          post({ type: "partial", text, lang });
+        }
       }
       post({ type: "stream-tick" });
       break;
@@ -112,6 +114,8 @@ async function handle(m) {
           type: "final",
           text: result.text,
           lang: result.lang,
+          deltaText: result.deltaText,
+          deltaLang: result.deltaLang,
           tokens: result.tokens,
           timing: result.timing,
         });

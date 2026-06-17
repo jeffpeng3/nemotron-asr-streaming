@@ -83,6 +83,8 @@ export interface TranscriptionResult {
 export interface SessionResult {
   text: string;
   lang: string | null;
+  deltaText: string;
+  deltaLang: string | null;
   tokens: number;
   timing: {
     encoder: number;
@@ -102,7 +104,7 @@ export declare class EnergyVAD {
 export declare class Session {
   constructor(engine: AsrEngine, langId: number, vadOptions?: boolean | VadOptions);
   readonly speaking: boolean;
-  feed(samples: Float32Array): Promise<{ text: string; lang: string | null } | null>;
+  feed(samples: Float32Array): Promise<DetokResult[] | null>;
   end(): Promise<SessionResult | null>;
 }
 
