@@ -108,6 +108,28 @@ await engine.switchProfile("HIGH");  // highest accuracy
 
 ## API
 
+### `AsrEngine.preload(onProgress?)`
+
+Pre-download and cache all model files (vocab, encoder, decoder, joint) before
+creating an engine instance. Subsequent `init()` calls will find files already
+in cache and skip network. Useful for showing a download progress screen early
+in the app lifecycle.
+
+```js
+await AsrEngine.preload((label, loaded, total, cached) => {
+  console.log(`${label}: ${loaded}/${total}`);
+});
+// Now engine.init() will be near-instant
+const engine = new AsrEngine(callbacks);
+await engine.init();
+```
+
+**Arguments:**
+
+| Argument | Type | Description |
+|----------|------|-------------|
+| `onProgress` | `(label, loaded, total, cached?) => void` | Optional download progress callback |
+
 ### `new AsrEngine(callbacks?, options?)`
 
 **Options:**

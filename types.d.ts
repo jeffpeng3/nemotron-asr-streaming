@@ -147,6 +147,7 @@ export declare class AsrEngine {
   readonly profile: string;
   readonly encoderEP: string;
 
+  static preload(onProgress?: (label: string, loaded: number, total: number, cached?: boolean) => void): Promise<void>;
   init(): Promise<void>;
   switchProfile(name: string): Promise<void>;
   transcribe(samples: Float32Array, langId: number): Promise<TranscriptionResult>;

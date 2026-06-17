@@ -14,6 +14,10 @@ const CACHE_PREFIX = "nemotron-asr-int4";
 const CACHE_VERSION = "1";  // bump when model changes to force re-download
 const ORT_WASM_CDN = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0/dist/";
 
+async function _openCache() {
+  try { return await caches.open(CACHE_PREFIX + "-" + CACHE_VERSION); } catch { return null; }
+}
+
 // ────────────────────────────────────────────
 //  Session — streaming transcription session
 // ────────────────────────────────────────────
@@ -475,7 +479,66 @@ export class AsrEngine {
   }
 
   async _openCache() {
-    try { return await caches.open(CACHE_PREFIX + "-" + CACHE_VERSION); } catch { return null; }
+    return _openCache();
+  }
+
+  static async _openCache() {
+    return _openCache();
+  }
+
+  static async _staticFetchBytes(name, label, onProgress) {
+    const url = C.BASE + name;
+    const cache = await AsrEngine._openCache();
+    if (cache) {
+      const hit = await cache.match(url);
+      if (hit) {
+        if (onProgress) onProgress(label, 1, 1, true);
+        return;
+      }
+    }
+    const resp = await fetch(url, { cache: "no-store" });
+    if (!resp.ok || !resp.body)
+      throw new Error(`HTTP ${resp.status || "?"} fetching ${label}`);
+    const total = Number(resp.headers.get("content-length")) || 0;
+    const reader = resp.body.getReader();
+    const chunks = [];
+    let loaded = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      loaded += value.byteLength;
+      if (onProgress) onProgress(label, loaded, total);
+    }
+    const len = chunks.reduce((s, c) => s + c.byteLength, 0);
+    const buf = new Uint8Array(len);
+    let off = 0;
+    for (const c of chunks) { buf.set(c, off); off += c.byteLength; }
+    if (cache) {
+      try {
+        await cache.put(url, new Response(buf, {
+          headers: { "Content-Type": "application/octet-stream", "Content-Length": String(len) },
+        }));
+      } catch {}
+    }
+  }
+
+  /**
+   * Pre-download and cache all model files before creating an AsrEngine instance.
+   * Subsequent init() calls will find files already in cache and skip network.
+   * @param {(label: string, loaded: number, total: number, cached?: boolean) => void} [onProgress]
+   * @returns {Promise<void>}
+   */
+  static async preload(onProgress) {
+    const files = [
+      "vocab.txt",
+      "encoder.onnx", "encoder.onnx.data",
+      "decoder.onnx", "decoder.onnx.data",
+      "joint.onnx", "joint.onnx.data",
+    ];
+    for (const name of files) {
+      await AsrEngine._staticFetchBytes(name, name, onProgress);
+    }
   }
 
   async _fetchBytes(name, label) {
